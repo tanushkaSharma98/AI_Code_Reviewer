@@ -1,8 +1,19 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import MonacoEditor from "@monaco-editor/react";
 import StatusDisplay from "../components/StatusDisplay";
 import Spinner from "../components/Spinner";
 import { pasteSchema, zipSchema, githubSchema } from "../utils/validation";
+
+function getLanguageFromFilename(filename: string) {
+  if (filename.endsWith('.py')) return 'python';
+  if (filename.endsWith('.js')) return 'javascript';
+  if (filename.endsWith('.java')) return 'java';
+  if (filename.endsWith('.c')) return 'c';
+  if (filename.endsWith('.cpp')) return 'cpp';
+  if (filename.endsWith('.md')) return 'markdown';
+  if (filename.endsWith('.ts')) return 'typescript';
+  return 'plaintext';
+}
 
 const TABS = ["Paste Code", "Upload ZIP", "GitHub Repo"] as const;
 type Tab = typeof TABS[number];
@@ -29,6 +40,10 @@ const Home: React.FC = () => {
   const statusInterval = useRef<NodeJS.Timeout | null>(null);
   const [maxZipSizeMB, setMaxZipSizeMB] = useState(5);
   const [maxZipSizeBytes, setMaxZipSizeBytes] = useState(5 * 1024 * 1024);
+  const [review, setReview] = useState<any>(null);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  const [showLinter, setShowLinter] = useState(false);
+  const chatFeedRef = useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     fetch(`${API_BASE}/config`).then(async (res) => {
@@ -42,6 +57,20 @@ const Home: React.FC = () => {
       setMaxZipSizeBytes(5 * 1024 * 1024);
     });
   }, []);
+
+  React.useEffect(() => {
+    if (sessionId && status?.status === "complete") {
+      fetch(`${API_BASE}/review/${sessionId}`)
+        .then((res) => res.json())
+        .then((data) => setReview(data));
+    }
+  }, [sessionId, status]);
+
+  useEffect(() => {
+    if (chatFeedRef.current) {
+      chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
+    }
+  }, [review]);
 
   const handleTab = (t: Tab) => {
     setTab(t);
@@ -124,6 +153,12 @@ const Home: React.FC = () => {
   const handleDownload = () => {
     if (!sessionId || !status?.download_url) return;
     window.open(`${API_BASE}${status.download_url}`, "_blank");
+  };
+
+  const handleCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopyMsg("Copied!");
+    setTimeout(() => setCopyMsg(null), 1200);
   };
 
   return (
@@ -223,6 +258,122 @@ const Home: React.FC = () => {
             downloadUrl={status?.download_url}
             onDownload={handleDownload}
           />
+        )}
+        {sessionId && !isPolling && review && (
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold mb-2 text-blue-700">AI Review Results</h2>
+            {/* Summary Card */}
+            <div className="mb-4 p-4 rounded bg-blue-50 flex flex-wrap gap-4 items-center shadow">
+              <span className="font-semibold text-blue-700">Summary:</span>
+              <span className="text-sm">Total Issues: <b>{Array.isArray(review.ai_log) ? review.ai_log.length : 0}</b></span>
+              <span className="text-sm">Files Affected: <b>{Array.isArray(review.ai_log) ? [...new Set(review.ai_log.map((i:any)=>i.file))].length : 0}</b></span>
+              {typeof review.code_quality_score === 'number' && (
+                <span className="text-sm">Code Quality Score: <b className="text-green-700">{review.code_quality_score}/100</b></span>
+              )}
+            </div>
+            {/* Collapsible Linter Results */}
+            <div className="mb-4">
+              <button
+                className="text-xs text-blue-600 underline mb-2"
+                onClick={() => setShowLinter((v) => !v)}
+                type="button"
+              >{showLinter ? 'Hide' : 'Show'} Linter Results</button>
+              {showLinter && (
+                <div className="bg-gray-100 rounded p-2 mt-2 max-h-48 overflow-auto text-xs">
+                  {review.linter_results && Object.keys(review.linter_results).length > 0 ? (
+                    Object.entries(review.linter_results).map(([file, issues]: any, idx) => (
+                      <div key={idx} className="mb-2">
+                        <div className="font-mono text-xs text-blue-700">{file}</div>
+                        <ul className="ml-4 list-disc">
+                          {issues.map((iss: any, i: number) => (
+                            <li key={i}>{iss.message || JSON.stringify(iss)}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-500">No linter issues found.</div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Chat Feed */}
+            <div ref={chatFeedRef} className="space-y-6 max-h-[400px] overflow-y-auto transition-all">
+              {Array.isArray(review.ai_log) && review.ai_log.length > 0 ? (
+                review.ai_log.map((issue: any, idx: number) => (
+                  <div key={idx} className="flex items-start gap-3 animate-fadein">
+                    <div className="flex-shrink-0 text-2xl">🤖</div>
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 shadow w-full">
+                      <div className="flex flex-wrap gap-4 items-center mb-2">
+                        <span className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">{issue.file}</span>
+                        <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">Line {issue.line}</span>
+                      </div>
+                      <div className="mb-1"><span className="font-semibold text-red-600">Issue:</span> {typeof issue.issue === 'string' ? issue.issue : issue.issue?.message}</div>
+                      <div className="mb-1"><span className="font-semibold text-blue-700">Suggestion:</span> {issue.suggestion}</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">Current Code</div>
+                          <MonacoEditor
+                            height="80"
+                            language={getLanguageFromFilename(issue.file)}
+                            value={issue.current_code}
+                            options={{ readOnly: true, fontSize: 13, minimap: { enabled: false } }}
+                          />
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1 flex items-center">Recommended Fix
+                            <button
+                              className="ml-2 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                              onClick={() => handleCopy(issue.recommended_code)}
+                              type="button"
+                            >Copy</button>
+                            {copyMsg && <span className="ml-2 text-green-600 text-xs">{copyMsg}</span>}
+                          </div>
+                          <MonacoEditor
+                            height="80"
+                            language={getLanguageFromFilename(issue.file)}
+                            value={issue.recommended_code}
+                            options={{ readOnly: true, fontSize: 13, minimap: { enabled: false } }}
+                          />
+                        </div>
+                      </div>
+                      {issue.patch && (
+                        <div className="mt-2">
+                          <div className="text-xs text-gray-500 mb-1">Patch Snippet</div>
+                          <pre className="bg-gray-200 rounded p-2 text-xs overflow-x-auto">{issue.patch}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-500">No issues found by AI review.</div>
+              )}
+            </div>
+            {/* Unified Patch & Copy */}
+            {review.patch && (
+              <div className="mt-8">
+                <h3 className="font-semibold mb-1">Unified Patch (all fixes)</h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <button
+                    className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                    onClick={() => handleCopy(review.patch)}
+                    type="button"
+                  >Copy Patch</button>
+                  {copyMsg && <span className="text-green-600 text-xs">{copyMsg}</span>}
+                </div>
+                <pre className="bg-gray-100 rounded p-2 text-xs overflow-x-auto">{review.patch}</pre>
+              </div>
+            )}
+            <button
+              className="mt-6 w-full bg-blue-600 text-white py-2 rounded font-semibold hover:bg-blue-700 transition"
+              onClick={handleDownload}
+              type="button"
+            >Download Full ZIP</button>
+          </div>
+        )}
+        {sessionId && !isPolling && !review && (
+          <div className="mt-8 text-gray-500">Loading review results...</div>
         )}
       </div>
       <footer className="mt-8 text-gray-400 text-sm">AI Code Reviewer &copy; {new Date().getFullYear()}</footer>
