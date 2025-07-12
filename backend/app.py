@@ -20,12 +20,14 @@ CORS(app)
 UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'ai_code_reviewer_sessions')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'.py', '.js', '.java', '.c', '.cpp', '.txt', '.md'}
+# ALLOWED_EXTENSIONS = {'.py', '.js', '.java', '.c', '.cpp', '.txt', '.md'}
 MAX_ZIP_SIZE_MB = int(os.getenv('MAX_ZIP_SIZE_MB', 5))
 MAX_ZIP_SIZE = MAX_ZIP_SIZE_MB * 1024 * 1024
 
+print("MAX_ZIP_SIZE_MB =", MAX_ZIP_SIZE_MB)
+
 def allowed_file(filename):
-    return any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS)
+    return True  # Accept any file extension
 
 @app.route('/submit', methods=['POST'])
 def submit():
@@ -161,6 +163,45 @@ def download(session_id):
     if not os.path.exists(zip_path):
         return jsonify({'error': 'ZIP package not found.'}), 404
     return send_file(zip_path, as_attachment=True)
+
+@app.route('/review/<session_id>', methods=['GET'])
+def review(session_id):
+    session_dir = os.path.join(UPLOAD_FOLDER, session_id)
+    ai_log_path = os.path.join(session_dir, 'ai_log.json')
+    linter_path = os.path.join(session_dir, 'linter_results.json')
+    patch_path = os.path.join(session_dir, 'patch.diff')
+    report_path = os.path.join(session_dir, 'review_report.md')
+    download_url = f'/download/{session_id}'
+    # Load files if they exist
+    ai_log = []
+    linter_results = {}
+    code_quality_score = None
+    patch = ''
+    if os.path.exists(ai_log_path):
+        with open(ai_log_path, 'r', encoding='utf-8') as f:
+            ai_log = json.load(f)
+    if os.path.exists(linter_path):
+        with open(linter_path, 'r', encoding='utf-8') as f:
+            linter_results = json.load(f)
+    if os.path.exists(report_path):
+        with open(report_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip().startswith('## Code Quality Score:'):
+                    try:
+                        code_quality_score = int(line.split(':')[1].split('/')[0].strip())
+                    except Exception:
+                        code_quality_score = None
+                    break
+    if os.path.exists(patch_path):
+        with open(patch_path, 'r', encoding='utf-8') as f:
+            patch = f.read()
+    return jsonify({
+        'ai_log': ai_log,
+        'linter_results': linter_results,
+        'code_quality_score': code_quality_score,
+        'patch': patch,
+        'download_url': download_url
+    })
 
 if __name__ == '__main__':
     app.run(debug=True) 
