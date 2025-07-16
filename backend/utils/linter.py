@@ -5,6 +5,8 @@ import json
 LINTER_COMMANDS = {
     'Python': lambda f: ['flake8', f],
     'JavaScript': lambda f: ['eslint', '--format', 'json', f],
+    'TypeScript': lambda f: ['eslint', '--format', 'json', f],
+    'TSX': lambda f: ['eslint', '--format', 'json', f],
     'Java': lambda f: ['java', '-jar', 'checkstyle.jar', '-f', 'xml', f],
     'C': lambda f: ['clang-tidy', f, '--'],
     'C++': lambda f: ['clang-tidy', f, '--'],
@@ -19,6 +21,9 @@ def run_linter(file_path, language):
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         output = result.stdout + result.stderr
+        if result.returncode != 0 and 'eslint' in cmd[0]:
+            # If ESLint fails, return the error message
+            return [{'error': f'ESLint failed: {output}'}]
         return parse_linter_output(language, output)
     except Exception as e:
         return [{'error': str(e)}]
@@ -53,7 +58,12 @@ def parse_linter_output(language, output):
 
 def run_linters_on_dir(directory, lang_map):
     results = {}
+    SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'venv', '__pycache__', '.venv', '.mypy_cache', '.pytest_cache'}
     for rel_path, lang in lang_map.items():
+        # Skip files in ignored directories
+        parts = rel_path.split(os.sep)
+        if any(part in SKIP_DIRS for part in parts):
+            continue
         if lang in SUPPORTED_LANGUAGES:
             abs_path = os.path.join(directory, rel_path)
             issues = run_linter(abs_path, lang)

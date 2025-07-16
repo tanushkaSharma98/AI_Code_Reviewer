@@ -28,7 +28,10 @@ def detect_language_by_content(filepath):
 
 def detect_languages_in_dir(directory):
     file_langs = {}
-    for root, _, files in os.walk(directory):
+    SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'venv', '__pycache__', '.venv', '.mypy_cache', '.pytest_cache'}
+    for root, dirs, files in os.walk(directory):
+        # Remove skip dirs from traversal
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for fname in files:
             fpath = os.path.join(root, fname)
             lang = detect_language_by_extension(fname)

@@ -18,13 +18,30 @@ def mock_gemini_review(file, line, issue, code, linter_output, best_practices):
 
 def run_ai_review_on_rag(directory, lang_map, rag_context):
     ai_results = []
+    SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'venv', '__pycache__', '.venv', '.mypy_cache', '.pytest_cache'}
     for rel_path, issues in rag_context.items():
+        parts = rel_path.split(os.sep)
+        if any(part in SKIP_DIRS for part in parts):
+            continue
         abs_path = os.path.join(directory, rel_path)
         try:
             with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
         except Exception:
-            lines = []
+            # File not found or cannot be opened; skip or add a clear message
+            for entry in issues:
+                issue = entry.get('issue', {})
+                context = entry.get('context', [])
+                ai_results.append({
+                    "file": rel_path,
+                    "line": 1,
+                    "issue": issue,
+                    "suggestion": "[AI] File not found or cannot be opened. Skipping review for this file.",
+                    "current_code": "",
+                    "recommended_code": "",
+                    "patch": ""
+                })
+            continue
         for entry in issues:
             issue = entry.get('issue', {})
             context = entry.get('context', [])
