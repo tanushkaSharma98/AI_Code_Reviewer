@@ -43,6 +43,7 @@ const Home: React.FC = () => {
   const [review, setReview] = useState<any>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const [showLinter, setShowLinter] = useState(false);
+  const [expandedIssue, setExpandedIssue] = useState<number | null>(null);
   const chatFeedRef = useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -163,7 +164,7 @@ const Home: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-gray-100 flex flex-col items-center py-8">
-      <div className="w-full max-w-2xl bg-white rounded-lg shadow-xl p-8">
+      <div className="w-full max-w-screen-2xl bg-white rounded-lg shadow-xl p-8 px-12">
         <h1 className="text-3xl font-bold mb-2 text-center text-blue-700">AI Code Reviewer</h1>
         <p className="text-center text-gray-500 mb-6">Paste code, upload a ZIP, or enter a GitHub repo to get an instant AI-powered review and patch!</p>
         <div className="flex space-x-2 mb-6 justify-center">
@@ -297,6 +298,12 @@ const Home: React.FC = () => {
                 </div>
               )}
             </div>
+            {review.pr_comments && (
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-2 text-blue-700">PR-Style Comments</h3>
+                <pre className="bg-gray-100 rounded p-4 text-sm overflow-x-auto whitespace-pre-wrap">{review.pr_comments}</pre>
+              </div>
+            )}
             {/* Chat Feed */}
             <div ref={chatFeedRef} className="space-y-6 max-h-[400px] overflow-y-auto transition-all">
               {Array.isArray(review.ai_log) && review.ai_log.length > 0 ? (
@@ -307,36 +314,61 @@ const Home: React.FC = () => {
                       <div className="flex flex-wrap gap-4 items-center mb-2">
                         <span className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">{issue.file}</span>
                         <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">Line {issue.line}</span>
+                        <button
+                          className="ml-auto px-2 py-1 text-xs bg-gray-200 rounded hover:bg-blue-200"
+                          onClick={() => setExpandedIssue(expandedIssue === idx ? null : idx)}
+                          type="button"
+                        >{expandedIssue === idx ? 'Collapse' : 'Expand'}</button>
                       </div>
                       <div className="mb-1"><span className="font-semibold text-red-600">Issue:</span> {typeof issue.issue === 'string' ? issue.issue : issue.issue?.message}</div>
                       <div className="mb-1"><span className="font-semibold text-blue-700">Suggestion:</span> {issue.suggestion}</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                        <div>
-                          <div className="text-xs text-gray-500 mb-1">Current Code</div>
-                          <MonacoEditor
-                            height="80"
-                            language={getLanguageFromFilename(issue.file)}
-                            value={issue.current_code}
-                            options={{ readOnly: true, fontSize: 13, minimap: { enabled: false } }}
-                          />
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500 mb-1 flex items-center">Recommended Fix
-                            <button
-                              className="ml-2 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-                              onClick={() => handleCopy(issue.recommended_code)}
-                              type="button"
-                            >Copy</button>
-                            {copyMsg && <span className="ml-2 text-green-600 text-xs">{copyMsg}</span>}
+                      {expandedIssue === idx ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Current Code</div>
+                            <MonacoEditor
+                              height="80"
+                              language={getLanguageFromFilename(issue.file)}
+                              value={issue.current_code}
+                              options={{ readOnly: true, fontSize: 13, minimap: { enabled: false } }}
+                            />
                           </div>
-                          <MonacoEditor
-                            height="80"
-                            language={getLanguageFromFilename(issue.file)}
-                            value={issue.recommended_code}
-                            options={{ readOnly: true, fontSize: 13, minimap: { enabled: false } }}
-                          />
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1 flex items-center">Recommended Fix
+                              <button
+                                className="ml-2 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                                onClick={() => handleCopy(issue.recommended_code)}
+                                type="button"
+                              >Copy</button>
+                              {copyMsg && <span className="ml-2 text-green-600 text-xs">{copyMsg}</span>}
+                            </div>
+                            <MonacoEditor
+                              height="80"
+                              language={getLanguageFromFilename(issue.file)}
+                              value={issue.recommended_code}
+                              options={{ readOnly: true, fontSize: 13, minimap: { enabled: false } }}
+                            />
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Current Code</div>
+                            <pre className="bg-gray-200 rounded p-2 text-xs overflow-x-auto"><code>{issue.current_code}</code></pre>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1 flex items-center">Recommended Fix
+                              <button
+                                className="ml-2 px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                                onClick={() => handleCopy(issue.recommended_code)}
+                                type="button"
+                              >Copy</button>
+                              {copyMsg && <span className="ml-2 text-green-600 text-xs">{copyMsg}</span>}
+                            </div>
+                            <pre className="bg-gray-200 rounded p-2 text-xs overflow-x-auto"><code>{issue.recommended_code}</code></pre>
+                          </div>
+                        </div>
+                      )}
                       {issue.patch && (
                         <div className="mt-2">
                           <div className="text-xs text-gray-500 mb-1">Patch Snippet</div>
