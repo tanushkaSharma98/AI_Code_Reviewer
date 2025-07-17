@@ -1,0 +1,10 @@
+flask
+flask-cors
+langchain
+chromadb
+gitpython
+pygments
+unidiff
+requests
+python-dotenv
+langchain-community 
