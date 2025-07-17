@@ -3,6 +3,9 @@ FROM node:20-alpine as build
 
 WORKDIR /app
 
+# Add build tools for native modules on Alpine
+RUN apk add --no-cache python3 make g++
+
 # Install dependencies
 COPY package.json package-lock.json ./
 RUN npm install
